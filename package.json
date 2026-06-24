@@ -1,0 +1,49 @@
+{
+  "name": "azure-pqc-inventory",
+  "version": "1.0.0",
+  "description": "Scan Azure Key Vault, App Service, and Front Door for quantum-vulnerable cryptography and produce a post-quantum readiness inventory.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "azure",
+    "post-quantum",
+    "pqc",
+    "cryptography",
+    "key-vault",
+    "tls",
+    "security",
+    "inventory",
+    "quantum-risk"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "bin": {
+    "azure-pqc-inventory": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@azure/arm-appservice": "^18.0.0",
+    "@azure/arm-cdn": "^9.1.0",
+    "@azure/arm-keyvault": "^5.0.0",
+    "@azure/identity": "^4.13.1",
+    "@azure/keyvault-certificates": "^4.10.3",
+    "@azure/keyvault-keys": "^4.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4",
+    "typescript": "^5"
+  }
+}
