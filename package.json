@@ -35,7 +35,7 @@
     "prepublishOnly": "npm run lint && npm test && npm run build"
   },
   "dependencies": {
-    "@azure/arm-appservice": "^18.0.0",
+    "@azure/arm-appservice": "^19.0.0",
     "@azure/arm-cdn": "^9.1.0",
     "@azure/arm-keyvault": "^5.0.0",
     "@azure/identity": "^4.13.1",
