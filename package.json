@@ -43,7 +43,7 @@
     "@azure/keyvault-keys": "^4.10.0"
   },
   "devDependencies": {
-    "@types/node": "^20",
+    "@types/node": "^26",
     "tsx": "^4",
     "typescript": "^5"
   }
