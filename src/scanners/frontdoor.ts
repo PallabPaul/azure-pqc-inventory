@@ -19,9 +19,12 @@ import {
 import { CdnManagementClient } from "@azure/arm-cdn";
 
 import type { AzureAuthOptions, CryptoResource, ScannerResult } from "../types.js";
+import { redactAzureIdentifiers } from "../redact.js";
+import { probeTls } from "./appservice.js";
 
 export interface FrontDoorScanOptions extends AzureAuthOptions {
   resourceGroups?: string[];
+  tlsTimeoutMs?: number;
 }
 
 export async function scanFrontDoor(
@@ -73,28 +76,35 @@ export async function scanFrontDoor(
           });
         }
 
-        // 2. Certificate / handshake posture.
-        if (certType === "CustomerCertificate") {
+        // 2. Live certificate / handshake posture. The management API does
+        // not expose the leaf algorithm, so never invent ECDHE-RSA metadata.
+        const probe = await probeTls(hostName, opts.tlsTimeoutMs ?? 5000);
+        if (probe) {
+          const vulnerable =
+            probe.keyAlgorithm.startsWith("RSA") ||
+            probe.keyAlgorithm.startsWith("EC");
           resources.push({
             id: `${domain.id}/tls/handshake`,
             name: `${profileName}/${hostName} — TLS handshake`,
             type: "Front Door custom domain",
             region,
-            algorithm: "TLS 1.2 (ECDHE-RSA)",
-            risk: "HIGH",
-            pqReady: false,
-            details: `${baseDetails} Customer certificate from Key Vault — classical key exchange is quantum-vulnerable.`,
+            algorithm: `${probe.protocol} (${probe.keyAlgorithm})`,
+            risk: vulnerable ? "HIGH" : "MEDIUM",
+            pqReady: !vulnerable && probe.keyAlgorithm !== "UNKNOWN",
+            details:
+              `${baseDetails} Live handshake negotiated ${probe.protocol} / ${probe.cipher}; ` +
+              `leaf certificate public key ${probe.keyAlgorithm}.`,
           });
-        } else if (certType === "ManagedCertificate" || certType === undefined) {
+        } else {
           resources.push({
             id: `${domain.id}/tls/handshake`,
             name: `${profileName}/${hostName} — TLS handshake`,
             type: "Front Door custom domain",
             region,
-            algorithm: "TLS 1.2 (ECDHE-RSA)",
-            risk: "HIGH",
+            algorithm: "UNKNOWN",
+            risk: "MEDIUM",
             pqReady: false,
-            details: `${baseDetails} Front Door managed certificate (classical RSA) — quantum-vulnerable key exchange.`,
+            details: `${baseDetails} The live TLS probe was unavailable and Azure does not expose the leaf algorithm in this API response (certificate type: ${certType ?? "managed"}).`,
           });
         }
       }
@@ -121,5 +131,5 @@ function parseResourceGroup(armId: string): string | null {
 }
 
 function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return redactAzureIdentifiers(err instanceof Error ? err.message : String(err));
 }

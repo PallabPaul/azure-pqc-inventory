@@ -71,14 +71,13 @@ export function describeCertAlgorithm(
 
 /**
  * Map an algorithm string to a quantum-risk level.
- *   - RSA (any size <4096) / EC (any curve): HIGH — broken by Shor.
- *   - RSA-4096: MEDIUM — still Shor-breakable, but a longer migration runway.
+ *   - RSA (every key size) / EC (every curve): HIGH — broken by Shor.
  *   - AES / symmetric >=256-bit: LOW — quantum-resistant under Grover.
  *   - AES / symmetric <256-bit: MEDIUM.
  */
 export function classifyRisk(algorithm: string): RiskLevel {
   if (algorithm.startsWith("RSA")) {
-    return /-4096$/.test(algorithm) ? "MEDIUM" : "HIGH";
+    return "HIGH";
   }
   if (algorithm.startsWith("EC")) {
     return "HIGH";

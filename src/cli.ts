@@ -29,6 +29,8 @@ interface CliOptions {
   output?: string;
   failOn?: RiskLevel;
   color: boolean;
+  tlsTimeoutMs: number;
+  keyAgeWarnDays: number;
 }
 
 const VALID_LEVELS: RiskLevel[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE"];
@@ -61,6 +63,8 @@ SCOPE & AUTH
   --client-secret <secret>   Service-principal secret (env AZURE_CLIENT_SECRET)
   --vault <name>             Limit Key Vault scan to this vault (repeatable)
   --resource-group <name>    Limit App Service / Front Door to this RG (repeatable)
+  --tls-timeout <ms>         Per-host TLS probe timeout (default 5000)
+  --key-age-days <days>      Flag keys older than this (default 365)
 
   When the service-principal flags/vars are omitted, DefaultAzureCredential is
   used (environment, Managed Identity, Azure CLI 'az login', …).
@@ -103,6 +107,8 @@ function parseArgs(argv: string[]): CliOptions {
     scanners: new Set(),
     json: false,
     color: true,
+    tlsTimeoutMs: 5000,
+    keyAgeWarnDays: 365,
   };
 
   const need = (name: string, value: string | undefined): string => {
@@ -151,6 +157,12 @@ function parseArgs(argv: string[]): CliOptions {
         break;
       case "--resource-group":
         opts.resourceGroups.push(need(arg, argv[++i]));
+        break;
+      case "--tls-timeout":
+        opts.tlsTimeoutMs = positiveInt(arg, need(arg, argv[++i]));
+        break;
+      case "--key-age-days":
+        opts.keyAgeWarnDays = positiveInt(arg, need(arg, argv[++i]));
         break;
       case "--json":
         opts.json = true;
@@ -209,18 +221,30 @@ async function main(): Promise<void> {
   try {
     if (opts.scanners.has("keyvault")) {
       process.stderr.write(color.dim("Scanning Key Vault…\n"));
-      results.push(await scanKeyVault({ ...auth, vaultNames: nonEmpty(opts.vaultNames) }));
+      results.push(await scanKeyVault({
+        ...auth,
+        vaultNames: nonEmpty(opts.vaultNames),
+        keyAgeWarnDays: opts.keyAgeWarnDays,
+      }));
     }
     if (opts.scanners.has("appservice")) {
       process.stderr.write(color.dim("Scanning App Service…\n"));
       results.push(
-        await scanAppService({ ...auth, resourceGroups: nonEmpty(opts.resourceGroups) }),
+        await scanAppService({
+          ...auth,
+          resourceGroups: nonEmpty(opts.resourceGroups),
+          tlsTimeoutMs: opts.tlsTimeoutMs,
+        }),
       );
     }
     if (opts.scanners.has("frontdoor")) {
       process.stderr.write(color.dim("Scanning Front Door…\n"));
       results.push(
-        await scanFrontDoor({ ...auth, resourceGroups: nonEmpty(opts.resourceGroups) }),
+        await scanFrontDoor({
+          ...auth,
+          resourceGroups: nonEmpty(opts.resourceGroups),
+          tlsTimeoutMs: opts.tlsTimeoutMs,
+        }),
       );
     }
   } catch (err) {
@@ -247,6 +271,14 @@ async function main(): Promise<void> {
 
 function nonEmpty(arr: string[]): string[] | undefined {
   return arr.length ? arr : undefined;
+}
+
+function positiveInt(option: string, raw: string): number {
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    fail(`${option} requires a positive integer`);
+  }
+  return value;
 }
 
 main().catch((err) => {

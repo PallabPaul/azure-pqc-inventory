@@ -23,10 +23,13 @@ import { WebSiteManagementClient } from "@azure/arm-appservice";
 import tls from "node:tls";
 
 import type { AzureAuthOptions, CryptoResource, ScannerResult } from "../types.js";
+import { redactAzureIdentifiers } from "../redact.js";
 
 export interface AppServiceScanOptions extends AzureAuthOptions {
   /** Optional resource-group filter. */
   resourceGroups?: string[];
+  /** Timeout for each public TLS probe. */
+  tlsTimeoutMs?: number;
 }
 
 export async function scanAppService(
@@ -109,7 +112,9 @@ export async function scanAppService(
         !(site.virtualNetworkSubnetId ?? "").length;
       if (isPublic) {
         const probeHost = pickProbeHostname(site.hostNames, site.defaultHostName);
-        const probe = probeHost ? await probeTls(probeHost) : null;
+        const probe = probeHost
+          ? await probeTls(probeHost, opts.tlsTimeoutMs ?? 5000)
+          : null;
         if (probe) {
           const vulnerable = probe.keyAlgorithm.startsWith("RSA") || probe.keyAlgorithm.startsWith("EC");
           resources.push({
@@ -126,6 +131,11 @@ export async function scanAppService(
               (vulnerable
                 ? " — classical key exchange is quantum-vulnerable (harvest-now-decrypt-later surface)."
                 : "."),
+          });
+        } else {
+          errors.push({
+            target: appName,
+            message: "Live TLS probe failed or certificate validation was not successful; endpoint coverage is incomplete.",
           });
         }
       }
@@ -158,7 +168,7 @@ function pickProbeHostname(
   return custom || defaultHost || null;
 }
 
-interface TlsProbe {
+export interface TlsProbe {
   protocol: string;
   cipher: string;
   keyAlgorithm: string;
@@ -169,7 +179,7 @@ interface TlsProbe {
  * and the peer leaf certificate's public-key algorithm, then close. Returns
  * null on any error or timeout — a probe failure must never abort the scan.
  */
-function probeTls(host: string): Promise<TlsProbe | null> {
+export function probeTls(host: string, timeoutMs = 5000): Promise<TlsProbe | null> {
   return new Promise((resolve) => {
     let done = false;
     const finish = (out: TlsProbe | null) => {
@@ -188,8 +198,7 @@ function probeTls(host: string): Promise<TlsProbe | null> {
         host,
         port: 443,
         servername: host,
-        // We just want handshake metadata; don't fail on chain issues.
-        rejectUnauthorized: false,
+        rejectUnauthorized: true,
         ALPNProtocols: ["http/1.1"],
       },
       () => {
@@ -208,7 +217,7 @@ function probeTls(host: string): Promise<TlsProbe | null> {
         }
       },
     );
-    socket.setTimeout(5000, () => finish(null));
+    socket.setTimeout(timeoutMs, () => finish(null));
     socket.on("error", () => finish(null));
   });
 }
@@ -232,5 +241,5 @@ function describePeerKey(peer: {
 }
 
 function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return redactAzureIdentifiers(err instanceof Error ? err.message : String(err));
 }

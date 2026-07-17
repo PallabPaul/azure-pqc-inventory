@@ -30,6 +30,7 @@ import {
   describeKeyAlgorithm,
   isPqReady,
 } from "../classify.js";
+import { redactAzureIdentifiers } from "../redact.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /** Flag keys that haven't been rotated in this many days. */
@@ -40,6 +41,8 @@ const CERT_EXPIRY_WARN_DAYS = 30;
 export interface KeyVaultScanOptions extends AzureAuthOptions {
   /** Optional vault-name allow-list. When omitted all vaults are scanned. */
   vaultNames?: string[];
+  /** Flag keys older than this many days. Defaults to 365. */
+  keyAgeWarnDays?: number;
 }
 
 export async function scanKeyVault(
@@ -117,7 +120,13 @@ export async function scanKeyVault(
 
         // Key hygiene: rotation policy + expiry / age.
         resources.push(
-          ...(await keyHygieneResources(vault.name, vault.location, key, keyClient)),
+          ...(await keyHygieneResources(
+            vault.name,
+            vault.location,
+            key,
+            keyClient,
+            opts.keyAgeWarnDays ?? KEY_AGE_WARN_DAYS,
+          )),
         );
       }
 
@@ -240,6 +249,7 @@ async function keyHygieneResources(
   location: string,
   key: KeyProperties,
   client: KeyClient,
+  keyAgeWarnDays = KEY_AGE_WARN_DAYS,
 ): Promise<CryptoResource[]> {
   const out: CryptoResource[] = [];
   const keyName = key.name ?? "unknown";
@@ -263,7 +273,7 @@ async function keyHygieneResources(
   // Key older than KEY_AGE_WARN_DAYS without rotation.
   if (key.createdOn) {
     const ageDays = Math.floor((Date.now() - key.createdOn.getTime()) / MS_PER_DAY);
-    if (ageDays > KEY_AGE_WARN_DAYS) {
+    if (ageDays > keyAgeWarnDays) {
       out.push({
         id: `${vaultName}/key-stale/${keyName}`,
         name: `${keyName} (${ageDays}d old)`,
@@ -381,5 +391,5 @@ function vaultPostureResources(
 }
 
 function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return redactAzureIdentifiers(err instanceof Error ? err.message : String(err));
 }

@@ -31,7 +31,8 @@
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
     "lint": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "test": "node --import tsx --test src/classify.test.ts src/report.test.ts src/redact.test.ts",
+    "prepublishOnly": "npm run lint && npm test && npm run build"
   },
   "dependencies": {
     "@azure/arm-appservice": "^18.0.0",
